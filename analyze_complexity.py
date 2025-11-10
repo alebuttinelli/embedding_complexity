@@ -1,19 +1,19 @@
 # -*- coding: utf-8 -*-
 """
-Script per l'analisi della complessità testuale.
+Script for textual complexity analysis.
 
-Questo script calcola una serie di metriche di complessità linguistica
-per un file di testo (CSV o Parquet) e salva i risultati in un nuovo file.
+This script calculates a series of linguistic complexity metrics
+for a text file (CSV or Parquet) and saves the results to a new file.
 
-Esempio di esecuzione:
+Example run:
     
-    # Per prima cosa, assicurati di aver scaricato il modello spaCy
+    # First, ensure you have downloaded the spaCy model
     # python -m spacy download it_core_news_lg
 
     python analyze_complexity.py \
-        --input_file "percorso/del/tuo/file_input.csv" \
-        --output_file "percorso/per/salvare/risultati.csv" \
-        --data_dir "percorso/cartella/con/parole_fondamentali.txt"
+        --input_file "path/to/your/input_file.csv" \
+        --output_file "path/to/save/results.csv" \
+        --data_dir "path/to/folder/with/parole_fondamentali.txt"
 """
 
 import spacy
@@ -26,28 +26,28 @@ from collections import defaultdict, Counter
 from tqdm import tqdm
 from functools import partial
 
-# Import di Scikit-learn
+# Scikit-learn imports
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.decomposition import PCA, LatentDirichletAllocation
 from sklearn.preprocessing import normalize, MinMaxScaler
-from sklearn.cluster import DBSCAN  # <-- IMPORT MANCANTE NEL TUO SCRIPT
+from sklearn.cluster import DBSCAN 
 
-# Configurazione del logging
+# Logging configuration
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
-# --- Funzioni di Metrica (Il tuo codice, pulito) ---
+#  Metric Functions
 
-def word_length(doc: spacy.tokens.Doc) -> float:
-    """Calcola la lunghezza media delle parole."""
+def word_length(doc):
+    """Calculates the average word length."""
     if not doc or len(doc) == 0:
         return 0.0
     total_length = sum(len(token.text) for token in doc)
     return round(total_length / len(doc), 2)
 
-def type_token_ratio(doc: spacy.tokens.Doc) -> float:
-    """Rapporto tra numero totale di token e numero totale di lemmi unici."""
+def type_token_ratio(doc):
+    """Ratio between the total number of tokens and the total number of unique lemmas."""
     if not doc or len(doc) == 0:
         return 0.0
     tokens_count = len(doc)
@@ -56,24 +56,24 @@ def type_token_ratio(doc: spacy.tokens.Doc) -> float:
         return 0.0
     return round(tokens_count / types_count, 2)
 
-def word_freq(doc: spacy.tokens.Doc, data_dir: Path) -> float:
+def word_freq(doc, data_dir):
     """
-    Calcola la frequenza del vocabolario di base (fondamentale + alto uso + alta disponibilità).
-    Richiede una directory contenente i file .txt del vocabolario.
+    Calculates the frequency of the basic vocabulary (fundamental + high use + high availability).
+    Requires a directory containing the vocabulary .txt files.
     """
     if not doc or len(doc) == 0:
         return 0.0
         
-    # Carica le liste di parole dai file (in modo sicuro e portatile)
+    # Load word lists from files
     try:
         with open(data_dir / "parole_fondamentali.txt", 'r', encoding='utf-8') as f:
-            p_fondamentali = set(f.read().split()) # Usa 'set' per ricerche veloci
+            p_fondamentali = set(f.read().split())
         with open(data_dir / "parole_alto_uso.txt", 'r', encoding='utf-8') as g:
             p_alto_uso = set(g.read().split())
         with open(data_dir / "parole_alta_disponibilita.txt", 'r', encoding='utf-8') as e:
             p_alta_disponibilita = set(e.read().split())
     except FileNotFoundError as e:
-        logging.warning(f"File di vocabolario non trovato: {e}. La funzione 'word_freq' restituirà 0.")
+        logging.warning(f"Vocabulary file not found: {e}. 'word_freq' function will return 0.")
         return 0.0
 
     lemmas = [token.lemma_ for token in doc if not token.is_punct and not token.is_space]
@@ -87,8 +87,8 @@ def word_freq(doc: spacy.tokens.Doc, data_dir: Path) -> float:
 
     return round(vocab_base_count / len(lemmas), 2)
 
-def avg_sentence_length(doc: spacy.tokens.Doc) -> float:
-    """Calcola la lunghezza media delle frasi."""
+def avg_sentence_length(doc):
+    """Calculates the average sentence length."""
     if not doc or len(doc) == 0:
         return 0.0
     sentences = list(doc.sents)
@@ -97,15 +97,15 @@ def avg_sentence_length(doc: spacy.tokens.Doc) -> float:
         return 0.0
     return round(len(doc) / sentences_count, 2)
 
-def compute_depth(node) -> int:
-    """Calcola ricorsivamente la profondità dell'albero sintattico."""
+def compute_depth(node):
+    """Recursively calculates the depth of the syntactic tree."""
     if not list(node.children):
         return 0
     else:
         return 1 + max(compute_depth(child) for child in node.children)
 
-def count_nodes_per_level(node, level: int = 0, levels: dict = None) -> dict:
-    """Conta i nodi per livello nell'albero sintattico."""
+def count_nodes_per_level(node, level = 0, levels = None):
+    """Counts nodes per level in the syntactic tree."""
     if levels is None:
         levels = defaultdict(int)
     levels[level] += 1
@@ -113,8 +113,8 @@ def count_nodes_per_level(node, level: int = 0, levels: dict = None) -> dict:
         count_nodes_per_level(child, level + 1, levels)
     return levels
 
-def calculate_avg_depth(doc: spacy.tokens.Doc) -> float:
-    """Calcola la profondità media delle frasi nel documento."""
+def calculate_avg_depth(doc):
+    """Calculates the average depth of sentences in the document."""
     all_depths = []
     for sent in doc.sents:
         if sent.root:
@@ -123,8 +123,8 @@ def calculate_avg_depth(doc: spacy.tokens.Doc) -> float:
 
     return round(np.mean(all_depths), 2) if all_depths else 0.0
 
-def calculate_avg_width(doc: spacy.tokens.Doc) -> float:
-    """Calcola la larghezza media (max nodi a un livello) delle frasi."""
+def calculate_avg_width(doc):
+    """Calculates the average width (max nodes at one level) of sentences."""
     all_widths = []
     for sent in doc.sents:
         if sent.root:
@@ -135,12 +135,12 @@ def calculate_avg_width(doc: spacy.tokens.Doc) -> float:
 
     return round(np.mean(all_widths), 2) if all_widths else 0.0
 
-def count_clauses(doc_sent: spacy.tokens.Span) -> int:
-    """Conta le clausole (verbi finiti) in una frase."""
+def count_clauses(doc_sent):
+    """Counts clauses (finite verbs) in a sentence."""
     return sum(1 for token in doc_sent if token.pos_ == "VERB" and token.morph.get("VerbForm") == ['Fin'])
 
-def clause_density(doc: spacy.tokens.Doc) -> float:
-    """Calcola la densità media di clausole per frase."""
+def clause_density(doc):
+    """Calculates the average density of clauses per sentence."""
     sentences = list(doc.sents)
     num_sentences = len(sentences)
     if num_sentences == 0:
@@ -149,8 +149,8 @@ def clause_density(doc: spacy.tokens.Doc) -> float:
     total_clauses = sum(count_clauses(sentence) for sentence in sentences)
     return round(total_clauses / num_sentences, 2)
 
-def gulpease_index(doc: spacy.tokens.Doc) -> float:
-    """Calcola l'indice Gulpease."""
+def gulpease_index(doc):
+    """Calculates the Gulpease index."""
     if not doc or len(doc) == 0:
         return 0.0
         
@@ -166,14 +166,14 @@ def gulpease_index(doc: spacy.tokens.Doc) -> float:
     FR = (sentences_count / words_count) * 100
     return round(89 - (LP / 10) + (FR * 3), 2)
 
-def extract_concepts(doc: spacy.tokens.Doc) -> list:
-    """Estrae concetti (sostantivi + entità nominate)."""
+def extract_concepts(doc):
+    """Extracts concepts (nouns + named entities)."""
     concepts = set(token.text.lower() for token in doc if token.pos_ == "NOUN")
     concepts.update(ent.text.lower() for ent in doc.ents)
     return list(concepts)
 
-def deduplicate_concepts(concepts: list) -> list:
-    """Deduplica i concetti usando TF-IDF e DBSCAN."""
+def deduplicate_concepts(concepts):
+    """Deduplicates concepts using TF-IDF and DBSCAN."""
     if not concepts:
         return []
 
@@ -181,32 +181,31 @@ def deduplicate_concepts(concepts: list) -> list:
     try:
         embeddings = vectorizer.fit_transform(concepts).toarray()
     except ValueError:
-        # Potrebbe fallire se i concetti sono solo stop-word, ecc.
         return concepts
 
     if embeddings.shape[0] == 0:
         return []
 
-    # Clustering per ridurre duplicati
+    # Clustering to reduce duplicates
     try:
         clustering = DBSCAN(eps=0.3, min_samples=1, metric="cosine").fit(embeddings)
         unique_indices = np.unique(clustering.labels_, return_index=True)[1]
         deduplicated = [concepts[i] for i in sorted(unique_indices)]
         return deduplicated
     except Exception as e:
-        logging.warning(f"Clustering DBSCAN fallito: {e}. Restituisco concetti non deduplicati.")
+        logging.warning(f"DBSCAN clustering failed: {e}. Returning non-deduplicated concepts.")
         return concepts
 
-def conceptual_density(doc: spacy.tokens.Doc) -> float:
-    """Calcola la densità concettuale (concetti unici / frasi)."""
+def conceptual_density(doc):
+    """Calculates conceptual density (unique concepts / sentences)."""
     concepts = extract_concepts(doc)
     deduplicated_concepts = deduplicate_concepts(concepts)
     num_sentences = len(list(doc.sents))
     
     return round(len(deduplicated_concepts) / num_sentences, 2) if num_sentences > 0 else 0.0
 
-def calculate_coherence(doc: spacy.tokens.Doc) -> float:
-    """Calcola la coerenza (similarità cosina media tra frasi adiacenti)."""
+def calculate_coherence(doc):
+    """Calculates coherence (average cosine similarity between adjacent sentences)."""
     sentences = [sent.text.strip() for sent in doc.sents]
     if len(sentences) < 2:
         return 0.0
@@ -224,20 +223,20 @@ def calculate_coherence(doc: spacy.tokens.Doc) -> float:
         ]
         return round(np.mean(similarities), 2) if similarities else 0.0
     except ValueError:
-        # Fallisce se il vocabolario è vuoto (es. solo punteggiatura)
+        # Fails if the vocabulary is empty (e.g., only punctuation)
         return 0.0
 
-def lda_thematic_progression(doc: spacy.tokens.Doc, num_topics: int = 2) -> float:
-    """Calcola la progressione tematica (similarità LDA tra frasi adiacenti)."""
+def lda_thematic_progression(doc, num_topics = 2):
+    """Calculates thematic progression (LDA similarity between adjacent sentences)."""
     sentences = [sent.text.strip() for sent in doc.sents if sent.text.strip()]
     if len(sentences) < 2:
         return 0.0
 
     try:
-        vectorizer = TfidfVectorizer(stop_words="english") # Meglio specificare una lingua
+        vectorizer = TfidfVectorizer()
         dt_matrix = vectorizer.fit_transform(sentences)
         
-        # Se la matrice è vuota o ha meno feature dei topic
+        # If the matrix is empty or has fewer features than topics
         if dt_matrix.shape[1] < num_topics:
             num_topics = dt_matrix.shape[1]
         if num_topics == 0:
@@ -252,11 +251,11 @@ def lda_thematic_progression(doc: spacy.tokens.Doc, num_topics: int = 2) -> floa
         ]
         return round(np.mean(similarities), 2) if similarities else 0.0
     except ValueError:
-        # Fallisce se il vocabolario è vuoto
+        # Fails if the vocabulary is empty
         return 0.0
 
-def shannon_entropy(doc: spacy.tokens.Doc) -> float:
-    """Calcola l'entropia di Shannon basata sulla frequenza delle parole."""
+def shannon_entropy(doc):
+    """Calculates Shannon entropy based on word frequency."""
     words = [token.text.lower() for token in doc if not token.is_punct and not token.is_space]
     if not words:
         return 0.0
@@ -268,25 +267,23 @@ def shannon_entropy(doc: spacy.tokens.Doc) -> float:
     return round(entropy, 2)
 
 
-# --- Funzione Principale di Analisi ---
-
-def analyze_dataframe(df: pd.DataFrame, nlp: spacy.Language, data_dir: Path) -> pd.DataFrame:
+def analyze_dataframe(df, nlp, data_dir):
     """
-    Applica l'analisi di complessità a un DataFrame.
+    Applies complexity analysis to a DataFrame.
     """
-    logging.info("Tokenizzazione dei testi con spaCy... (potrebbe richiedere tempo)")
-    # Disabilita i componenti non necessari per velocizzare
+    logging.info("Tokenizing texts with spaCy... (this may take time)")
+    # Disable unnecessary components to speed up
     disabled_pipes = ["ner"] if "conceptual_density" not in [f.__name__ for f in lista_funct] else []
     
     df['testo_tok'] = list(tqdm(
         nlp.pipe(df['testo'], disable=disabled_pipes), 
         total=len(df), 
-        desc="Elaborazione spaCy"
+        desc="spaCy Processing"
     ))
 
-    # Pre-associa l'argomento data_dir a word_freq
+    # Pre-associate the data_dir argument with word_freq
     word_freq_partial = partial(word_freq, data_dir=data_dir)
-    word_freq_partial.__name__ = "word_freq" # Mantiene il nome corretto
+    word_freq_partial.__name__ = "word_freq"
 
     lista_funct = [
         word_length,
@@ -300,91 +297,88 @@ def analyze_dataframe(df: pd.DataFrame, nlp: spacy.Language, data_dir: Path) -> 
         calculate_coherence,
         lda_thematic_progression,
         shannon_entropy,
-        word_freq_partial # Usa la funzione parziale
+        word_freq_partial
     ]
 
-    logging.info("Calcolo delle metriche di complessità...")
-    for funct in tqdm(lista_funct, desc="Calcolo Metriche"):
+    logging.info("Calculating complexity metrics...")
+    for funct in tqdm(lista_funct, desc="Calculating Metrics"):
         df[funct.__name__] = df['testo_tok'].apply(funct)
 
-    # Rimuove la colonna spaCy (pesante) prima di salvare
     df = df.drop(columns=['testo_tok'])
 
     return df
 
-# --- Blocco di Esecuzione Principale ---
-
 def main():
     """
-    Punto di ingresso principale per lo script da riga di comando.
+    Main entry point for the command-line script.
     """
-    parser = argparse.ArgumentParser(description="Analizzatore di Complessità Testuale")
+    parser = argparse.ArgumentParser(description="Textual Complexity Analyzer")
     parser.add_argument(
         "-i", "--input_file", 
         type=str, 
         required=True, 
-        help="Percorso del file di input (.csv o .parquet)."
+        help="Path to the input file (.csv or .parquet)."
     )
     parser.add_argument(
         "-o", "--output_file", 
         type=str, 
         required=True, 
-        help="Percorso del file di output (.csv o .parquet)."
+        help="Path to the output file (.csv or .parquet)."
     )
     parser.add_argument(
         "-d", "--data_dir", 
         type=str, 
         required=True, 
-        help="Directory contenente i file .txt del vocabolario (es. 'parole_fondamentali.txt')."
+        help="Directory containing the vocabulary .txt files (e.g., 'parole_fondamentali.txt')."
     )
     parser.add_argument(
         "-t", "--text_column", 
         type=str, 
         default="testo", 
-        help="Nome della colonna contenente i testi (default: 'testo')."
+        help="Name of the column containing the texts (default: 'testo')."
     )
     
     args = parser.parse_args()
 
-    # Trasforma le stringhe dei percorsi in oggetti Path
+    # Transform path strings into Path objects
     input_path = Path(args.input_file)
     output_path = Path(args.output_file)
     data_dir_path = Path(args.data_dir)
 
-    # 1. Carica il modello spaCy
-    logging.info("Caricamento del modello spaCy 'it_core_news_lg'...")
+    # Load the spaCy model
+    logging.info("Loading spaCy model 'it_core_news_lg'...")
     try:
         nlp = spacy.load("it_core_news_lg")
     except OSError:
-        logging.error("Modello 'it_core_news_lg' non trovato.")
-        logging.error("Esegui 'python -m spacy download it_core_news_lg' dal tuo terminale.")
+        logging.error("Model 'it_core_news_lg' not found.")
+        logging.error("Run 'python -m spacy download it_core_news_lg' from your terminal.")
         return
 
-    # 2. Carica i dati
-    logging.info(f"Caricamento dati da {input_path}")
+    # Load data
+    logging.info(f"Loading data from {input_path}")
     if str(input_path).endswith(".csv"):
         df = pd.read_csv(input_path)
     elif str(input_path).endswith(".parquet"):
         df = pd.read_parquet(input_path)
     else:
-        logging.error("Formato file non supportato. Usare .csv o .parquet")
+        logging.error("Unsupported file format. Use .csv or .parquet")
         return
 
     if args.text_column not in df.columns:
-        logging.error(f"Colonna '{args.text_column}' non trovata nel file.")
+        logging.error(f"Column '{args.text_column}' not found in the file.")
         return
 
-    # 3. Esegui l'analisi
+    # Run the analysis
     df_results = analyze_dataframe(df, nlp, data_dir_path)
 
-    # 4. Salva i risultati
-    logging.info(f"Salvataggio dei risultati in {output_path}")
+    # Save the results
+    logging.info(f"Saving results to {output_path}")
     if str(output_path).endswith(".csv"):
         df_results.to_csv(output_path, index=False)
     elif str(output_path).endswith(".parquet"):
         df_results.to_parquet(output_path, index=False)
     
-    logging.info("Analisi completata con successo.")
+    logging.info("Analysis completed successfully.")
 
 if __name__ == "__main__":
     main()
