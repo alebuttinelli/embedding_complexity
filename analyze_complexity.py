@@ -1,19 +1,6 @@
 # -*- coding: utf-8 -*-
 """
 Script for textual complexity analysis.
-
-This script calculates a series of linguistic complexity metrics
-for a text file (CSV or Parquet) and saves the results to a new file.
-
-Example run:
-    
-    # First, ensure you have downloaded the spaCy model
-    # python -m spacy download it_core_news_lg
-
-    python analyze_complexity.py \
-        --input_file "path/to/your/input_file.csv" \
-        --output_file "path/to/save/results.csv" \
-        --data_dir "path/to/folder/with/parole_fondamentali.txt"
 """
 
 import spacy
@@ -25,19 +12,13 @@ from pathlib import Path
 from collections import defaultdict, Counter
 from tqdm import tqdm
 from functools import partial
-
-# Scikit-learn imports
-from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.decomposition import PCA, LatentDirichletAllocation
-from sklearn.preprocessing import normalize, MinMaxScaler
-from sklearn.cluster import DBSCAN 
+from sklearn.decomposition import LatentDirichletAllocation
+from sklearn.cluster import DBSCAN
 
 # Logging configuration
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-
-#  Metric Functions
 
 def word_length(doc):
     """Calculates the average word length."""
@@ -58,7 +39,7 @@ def type_token_ratio(doc):
 
 def word_freq(doc, data_dir):
     """
-    Calculates the frequency of the basic vocabulary (fundamental + high use + high availability).
+    Calculates the frequency of the basic vocabulary.
     Requires a directory containing the vocabulary .txt files.
     """
     if not doc or len(doc) == 0:
@@ -104,7 +85,7 @@ def compute_depth(node):
     else:
         return 1 + max(compute_depth(child) for child in node.children)
 
-def count_nodes_per_level(node, level = 0, levels = None):
+def count_nodes_per_level(node, level=0, levels=None):
     """Counts nodes per level in the syntactic tree."""
     if levels is None:
         levels = defaultdict(int)
@@ -150,7 +131,7 @@ def clause_density(doc):
     return round(total_clauses / num_sentences, 2)
 
 def gulpease_index(doc):
-    """Calculates the Gulpease index."""
+    """Calculates the Gulpease index, a readability metric for Italian."""
     if not doc or len(doc) == 0:
         return 0.0
         
@@ -223,10 +204,9 @@ def calculate_coherence(doc):
         ]
         return round(np.mean(similarities), 2) if similarities else 0.0
     except ValueError:
-        # Fails if the vocabulary is empty (e.g., only punctuation)
         return 0.0
 
-def lda_thematic_progression(doc, num_topics = 2):
+def lda_thematic_progression(doc, num_topics=2):
     """Calculates thematic progression (LDA similarity between adjacent sentences)."""
     sentences = [sent.text.strip() for sent in doc.sents if sent.text.strip()]
     if len(sentences) < 2:
@@ -251,7 +231,6 @@ def lda_thematic_progression(doc, num_topics = 2):
         ]
         return round(np.mean(similarities), 2) if similarities else 0.0
     except ValueError:
-        # Fails if the vocabulary is empty
         return 0.0
 
 def shannon_entropy(doc):
@@ -267,21 +246,11 @@ def shannon_entropy(doc):
     return round(entropy, 2)
 
 
-def analyze_dataframe(df, nlp, data_dir):
+def analyze_dataframe(df, nlp, data_dir, text_column):
     """
     Applies complexity analysis to a DataFrame.
     """
-    logging.info("Tokenizing texts with spaCy... (this may take time)")
-    # Disable unnecessary components to speed up
-    disabled_pipes = ["ner"] if "conceptual_density" not in [f.__name__ for f in lista_funct] else []
-    
-    df['testo_tok'] = list(tqdm(
-        nlp.pipe(df['testo'], disable=disabled_pipes), 
-        total=len(df), 
-        desc="spaCy Processing"
-    ))
-
-    # Pre-associate the data_dir argument with word_freq
+    # Define the list of functions
     word_freq_partial = partial(word_freq, data_dir=data_dir)
     word_freq_partial.__name__ = "word_freq"
 
@@ -299,11 +268,25 @@ def analyze_dataframe(df, nlp, data_dir):
         shannon_entropy,
         word_freq_partial
     ]
+    
+    # Disable NER if 'conceptual_density' is NOT in the list of functions to run
+    disabled_pipes = ["ner"] if "conceptual_density" not in [f.__name__ for f in lista_funct] else []
+    
+    try:
+        df['testo_tok'] = list(tqdm(
+            nlp.pipe(df[text_column], disable=disabled_pipes), 
+            total=len(df), 
+            desc="spaCy Processing"
+        ))
+    except KeyError:
+        logging.error(f"Column '{text_column}' not found in DataFrame. Check your --text_column argument.")
+        raise
 
     logging.info("Calculating complexity metrics...")
     for funct in tqdm(lista_funct, desc="Calculating Metrics"):
         df[funct.__name__] = df['testo_tok'].apply(funct)
 
+    # Clean up the large token object column to save memory
     df = df.drop(columns=['testo_tok'])
 
     return df
@@ -369,7 +352,7 @@ def main():
         return
 
     # Run the analysis
-    df_results = analyze_dataframe(df, nlp, data_dir_path)
+    df_results = analyze_dataframe(df, nlp, data_dir_path, args.text_column)
 
     # Save the results
     logging.info(f"Saving results to {output_path}")
